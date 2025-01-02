@@ -16,6 +16,6 @@ export {
     getTrackData,
     getPodcast,
     getHome
-} from './src/youtube';
+} from './src/youtube.js';
 
-export { getData, filter } from './src/sources'
+export { getData, filter } from './src/sources.js'
