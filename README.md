@@ -18,8 +18,8 @@ A powerful, lightweight, and high-performance API for accessing YouTube and YouT
 ### Language Support
 This API supports multiple languages, making it versatile for various platforms and use cases:
 - **[JavaScript](./js)**: Works with Node.js, React Native environments.
+- **[Python](./python)**: soon.
 - **Kotlin**: soon.
-- **Python**: soon.
 - **C#**: soon.
 - **PHP**: soon.
 - **Swift**: soon.
@@ -27,6 +27,7 @@ This API supports multiple languages, making it versatile for various platforms 
 
 For specific examples and usage instructions, visit the language-specific directories:
 - **[JavaScript](./js)**
+- **[Python](./python)**
 
 ---
 
