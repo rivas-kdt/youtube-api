@@ -21,7 +21,6 @@ This API supports multiple languages, making it versatile for various platforms 
 - **[Python](./python)**: Works with pyton 3.6 and above, no native modules needed.
 - **Kotlin**: soon.
 - **C#**: soon.
-- **PHP**: soon.
 - **Swift**: soon.
 - **Java**: soon.
 
