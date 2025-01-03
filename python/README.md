@@ -3,12 +3,9 @@
 
 A powerful, lightweight, and high-performance API for accessing YouTube and YouTube Music content, metadata, and streams. Designed for simplicity and flexibility, this library provides full access to YouTube sources, including videos, playlists, metadata, and more.
 """
-
 # Features
-# - Fetch videos, playlists, and metadata from YouTube and YouTube Music.
+# - Fetch videos, heigh quality audio sources, playlists, and metadata from YouTube and YouTube Music.
 # - Retrieve lyrics, related tracks, and detailed metadata.
-
-# Hydra YouTube API Documentation
 
 ## Installation
 To use the Hydra YouTube API, you can install it via pip:
