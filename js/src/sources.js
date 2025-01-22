@@ -15,71 +15,80 @@
 //     fetch = (await import('node-fetch')).default;
 // })();
 
-const IOS_CLIENT_VERSION = '19.28.1',
-    IOS_DEVICE_MODEL = 'iPhone16,2',
-    IOS_USER_AGENT_VERSION = '17_5_1',
-    IOS_OS_VERSION = '17.5.1.21F90';
-
-const ANDROID_CLIENT_VERSION = '19.30.36',
-    ANDROID_OS_VERSION = '14',
-    ANDROID_SDK_VERSION = '34';
-
 const generateClientPlaybackNonce = (length) => {
     const CPN_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
     return Array.from({ length }, () => CPN_CHARS[Math.floor(Math.random() * CPN_CHARS.length)]).join('');
 };
 
-export const getData = async (videoId, isRaw, clientName = 'ios') => {
+const currentVersion = 1.0
 
-    let client = {}
-    let agent = `com.google.ios.youtube/${IOS_CLIENT_VERSION}(${IOS_DEVICE_MODEL}; U; CPU iOS ${IOS_USER_AGENT_VERSION} like Mac OS X; en_US)`
-
-    switch (clientName) {
-        case 'ios':
-            client = {
-                clientName: 'IOS',
-                clientVersion: IOS_CLIENT_VERSION,
-                deviceMake: 'Apple',
-                deviceModel: IOS_DEVICE_MODEL,
-                platform: 'MOBILE',
-                osName: 'iOS',
-                osVersion: IOS_OS_VERSION,
-                hl: 'en',
-                gl: 'US',
-                utcOffsetMinutes: -240,
+const iosPayload = {
+    data: () => {
+        return {
+            cpn: generateClientPlaybackNonce(16),
+            contentCheckOk: true,
+            racyCheckOk: true,
+            context: {
+                client: {
+                    clientName: 'IOS',
+                    clientVersion: '19.228.1',
+                    deviceMake: 'Apple',
+                    deviceModel: 'iPhone16,2',
+                    platform: 'MOBILE',
+                    osName: 'iOS',
+                    osVersion: '17.5.1.21F90',
+                    hl: 'en',
+                    gl: 'US',
+                    utcOffsetMinutes: -240,
+                },
+                request: {
+                    internalExperimentFlags: [],
+                    useSsl: true,
+                },
+                user: {
+                    lockedSafetyMode: false,
+                },
             }
-            break;
-        case 'android':
-            client = {
-                clientName: 'ANDROID',
-                clientVersion: ANDROID_CLIENT_VERSION,
-                platform: 'MOBILE',
-                osName: 'Android',
-                osVersion: ANDROID_OS_VERSION,
-                androidSdkVersion: ANDROID_SDK_VERSION,
-                hl: 'en',
-                gl: 'US',
-                utcOffsetMinutes: -240,
-            }
-            agent = `com.google.android.youtube/${ANDROID_CLIENT_VERSION} (Linux; U; Android ${ANDROID_OS_VERSION}; en_US) gzip`
-            break;
-    }
+        }
+    },
+    agent: `com.google.ios.youtube/19.228.1(iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)`
+}
 
+const remotePaylod = {
+    data: () => {
+        return {
+            cpn: generateClientPlaybackNonce(16),
+            contentCheckOk: true,
+            racyCheckOk: true,
+            context: {
+                client: {
+                    clientName: 'ANDROID',
+                    clientVersion: '19.30.36',
+                    platform: 'MOBILE',
+                    osName: 'Android',
+                    osVersion: '14',
+                    androidSdkVersion: '34',
+                    hl: 'en',
+                    gl: 'US',
+                    utcOffsetMinutes: -240,
+                },
+                request: {
+                    internalExperimentFlags: [],
+                    useSsl: true,
+                },
+                user: {
+                    lockedSafetyMode: false,
+                },
+            }
+        }
+    },
+    agent: `com.google.android.youtube/19.30.36 (Linux; U; Android 14; en_US) gzip`
+}
+
+export const getData = async (videoId, isRaw, payloadData) => {
     const payload = {
         videoId,
-        cpn: generateClientPlaybackNonce(16),
-        contentCheckOk: true,
-        racyCheckOk: true,
-        context: {
-            client,
-            request: {
-                internalExperimentFlags: [],
-                useSsl: true,
-            },
-            user: {
-                lockedSafetyMode: false,
-            },
-        },
+        ...payloadData || remotePaylod.data()
     };
 
     const query = {
@@ -93,15 +102,48 @@ export const getData = async (videoId, isRaw, clientName = 'ios') => {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'User-Agent': agent,
+            'User-Agent': remotePaylod.agent,
             'X-Goog-Api-Format-Version': '2',
         },
         body: JSON.stringify(payload),
     };
-    const response = await fetch(`https://youtubei.googleapis.com/youtubei/v1/player?${queryString}`, opts);
-    const data = await response.json()
+    let data = {}
+    try {
+        const response = await fetch(`https://youtubei.googleapis.com/youtubei/v1/player?${queryString}`, opts);
+        if (!response.ok) {
+            hasError = true
+            checkUpdate()
+        }
+        data = await response.json()
+    } catch (e) {
+
+    }
     return !isRaw ? parseFormats(data) : data;
 };
+
+let hasError = false
+
+export const checkUpdate = async () => {
+    try {
+        const response = await fetch('https://st.onvo.me/config.json')
+        const json = await response.json()
+        if (json.version !== currentVersion) {
+            if (json.data && hasError || json.forceUpdate) {
+                remotePaylod.data = () => {
+                    return {
+                        cpn: generateClientPlaybackNonce(16),
+                        ...json.data
+                    }
+                }
+            }
+            if(json.agent && hasError || json.forceUpdate){
+                remotePaylod.agent = json.agent
+            }
+        }
+    } catch (e) {
+
+    }
+}
 
 const parseFormats = (response) => {
     let formats = [];
@@ -123,11 +165,11 @@ export const filter = (formats, filter, options = {}) => {
     }
 
     const {
-        fallback = false, 
-        customSort = null, 
+        fallback = false,
+        customSort = null,
         minBitrate = 0,
-        minResolution = 0, 
-        codec = null, 
+        minResolution = 0,
+        codec = null,
     } = options;
 
     let fn;
