@@ -175,12 +175,6 @@ export const getData = async (videoId, options = {}) => {
 
     let response = await playerAPI(videoId, payload, options);
     
-    if(response?.playabilityStatus?.status === 'UNPLAYABLE'){
-        payload.context.client.clientName = 'WEB';
-        payload.context.client.clientVersion = '2.20250403.01.00';
-        response = await playerAPI(videoId, payload, options);
-    }
-    
     const formatsRaw = parseFormats(response);
     const formatsObject = await decipherFormats(formatsRaw, info.html5player, options);
     const formats = Object.values(formatsObject);
