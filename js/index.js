@@ -18,4 +18,7 @@ export {
     getHome
 } from './src/youtube.js';
 
-export { getData, filter } from './src/sources.js'
+export { getData } from './src/sources.js'
+export { filter, chooseFormat } from './src/format-utils.js'
+
+

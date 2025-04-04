@@ -1,6 +1,6 @@
 {
   "name": "@hydralerne/youtube-api",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Fast and simple API for YouTube and YouTube Music",
   "main": "index.js",
   "scripts": {
@@ -23,5 +23,8 @@
     "url": "https://github.com/Hydralerne/youtube-api/issues"
   },
   "homepage": "https://github.com/Hydralerne/youtube-api#readme",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "vm": "^0.1.0"
+  }
 }

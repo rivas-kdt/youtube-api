@@ -6,7 +6,10 @@
 // ║                                                       ║
 // ╚═══════════════════════════════════════════════════════╝
 
-
+import * as utils from './utils.js';
+import Cache from './cache.js';
+import { decipherFormats } from './sig.js';
+import * as formatUtils from './format-utils.js';
 // for nodejs <= 18 un comment this
 
 // let fetch;
@@ -15,111 +18,189 @@
 //     fetch = (await import('node-fetch')).default;
 // })();
 
-const generateClientPlaybackNonce = (length) => {
-    const CPN_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-    return Array.from({ length }, () => CPN_CHARS[Math.floor(Math.random() * CPN_CHARS.length)]).join('');
+const BASE_URL = "https://www.youtube.com/watch?v=";
+
+
+const getPlaybackContext = async (html5player, options) => {
+    const response = await fetch(html5player, {
+        ...options.requestOptions,
+        method: "GET"
+    });
+    const body = await response.text();
+    const mo = body.match(/(signatureTimestamp|sts):(\d+)/);
+    return {
+        contentPlaybackContext: {
+            html5Preference: "HTML5_PREF_WANTS",
+            signatureTimestamp: mo?.[2],
+        },
+    };
+};
+const generateClientPlaybackNonce = length => {
+    const CPN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    return Array.from({ length }, () => CPN_CHARS[Math.floor(Math.random() * CPN_CHARS.length)]).join("");
 };
 
-const currentVersion = 1.0
+const playerAPI = async (videoId, payload, options) => {
+    const url = new URL("https://youtubei.googleapis.com/youtubei/v1/player");
+    url.searchParams.set("prettyPrint", "false");
+    url.searchParams.set("t", generateClientPlaybackNonce(12));
+    url.searchParams.set("id", videoId);
 
-const iosPayload = {
-    data: () => {
-        return {
-            cpn: generateClientPlaybackNonce(16),
-            contentCheckOk: true,
-            racyCheckOk: true,
-            context: {
-                client: {
-                    clientName: 'IOS',
-                    clientVersion: '19.228.1',
-                    deviceMake: 'Apple',
-                    deviceModel: 'iPhone16,2',
-                    platform: 'MOBILE',
-                    osName: 'iOS',
-                    osVersion: '17.5.1.21F90',
-                    hl: 'en',
-                    gl: 'US',
-                    utcOffsetMinutes: -240,
-                },
-                request: {
-                    internalExperimentFlags: [],
-                    useSsl: true,
-                },
-                user: {
-                    lockedSafetyMode: false,
-                },
-            }
-        }
-    },
-    agent: `com.google.ios.youtube/19.228.1(iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; en_US)`
-}
-
-const remotePaylod = {
-    data: () => {
-        return {
-            cpn: generateClientPlaybackNonce(16),
-            contentCheckOk: true,
-            racyCheckOk: true,
-            context: {
-                client: {
-                    clientName: 'ANDROID',
-                    clientVersion: '19.30.36',
-                    platform: 'MOBILE',
-                    osName: 'Android',
-                    osVersion: '14',
-                    androidSdkVersion: '34',
-                    hl: 'en',
-                    gl: 'US',
-                    utcOffsetMinutes: -240,
-                },
-                request: {
-                    internalExperimentFlags: [],
-                    useSsl: true,
-                },
-                user: {
-                    lockedSafetyMode: false,
-                },
-            }
-        }
-    },
-    agent: `com.google.android.youtube/19.30.36 (Linux; U; Android 14; en_US) gzip`
-}
-
-export const getData = async (videoId, isRaw, payloadData) => {
-    const payload = {
-        videoId,
-        ...payloadData || remotePaylod.data()
-    };
-
-    const query = {
-        prettyPrint: false,
-        t: generateClientPlaybackNonce(12),
-        id: videoId,
-    };
-
-    const queryString = new URLSearchParams(query).toString();
     const opts = {
-        method: 'POST',
+        method: "POST",
         headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': remotePaylod.agent,
-            'X-Goog-Api-Format-Version': '2',
+            "Content-Type": "application/json",
+            "X-Goog-Api-Format-Version": "2",
         },
         body: JSON.stringify(payload),
     };
-    let data = {}
-    try {
-        const response = await fetch(`https://youtubei.googleapis.com/youtubei/v1/player?${queryString}`, opts);
-        if (!response.ok) {
-            hasError = true
-            checkUpdate()
-        }
-        data = await response.json()
-    } catch (e) {
 
+    const response = await fetch(url, opts);
+    const data = await response.json();
+    return data;
+    const playErr = utils.playError(data);
+    if (playErr) throw playErr;
+    if (!data.videoDetails || videoId !== data.videoDetails.videoId) {
+        const err = new Error("Malformed response from YouTube");
+        err.response = response;
+        throw err;
     }
-    return !isRaw ? parseFormats(data) : data;
+    return data;
 };
+
+export const watchPageCache = new Cache();
+
+const getWatchHTMLURL = (id, options) =>
+    `${BASE_URL + id}&hl=${options.lang || "en"}&bpctr=${Math.ceil(Date.now() / 1000)}&has_verified=1`;
+const getWatchHTMLPageBody = (id, options) => {
+    const url = getWatchHTMLURL(id, options);
+    return watchPageCache.getOrSet(url, async () => {
+        const response = await fetch(url, {
+            ...options.requestOptions,
+            method: "GET"
+        });
+        return response.text();
+    });
+};
+const EMBED_URL = "https://www.youtube.com/embed/";
+const getEmbedPageBody = async (id, options) => {
+    const embedUrl = `${EMBED_URL + id}?hl=${options.lang || "en"}`;
+    const response = await fetch(embedUrl, {
+        ...options.requestOptions,
+        method: "GET"
+    });
+    return response.text();
+};
+
+const getHTML5player = body => {
+    let html5playerRes =
+        /<script\s+src="([^"]+)"(?:\s+type="text\/javascript")?\s+name="player_ias\/base"\s*>|"jsUrl":"([^"]+)"/.exec(body);
+    return html5playerRes?.[1] || html5playerRes?.[2];
+};
+
+const LOCALE = { hl: "en", timeZone: "UTC", utcOffsetMinutes: 0 },
+    CHECK_FLAGS = { contentCheckOk: true, racyCheckOk: true };
+
+const WEB_EMBEDDED_CONTEXT = {
+    client: {
+        clientName: "WEB_EMBEDDED_PLAYER",
+        clientVersion: "1.20240723.01.00",
+        ...LOCALE,
+    },
+};
+
+let cachedHTML5player
+let cachedPlaybackContexts = {}
+
+// Initialize function to pre-cache necessary data
+export const initialize = async (options = {}) => {
+    const sampleVideoId = 'V0BdAv9L4RE';
+    
+    if (!cachedHTML5player) {
+        cachedHTML5player = getHTML5player(await getWatchHTMLPageBody(sampleVideoId, options)) || 
+                            getHTML5player(await getEmbedPageBody(sampleVideoId, options));
+        
+        if (cachedHTML5player) {
+            const fullURL = new URL(cachedHTML5player, BASE_URL).toString();
+            cachedHTML5player = fullURL;
+            
+            // Pre-cache playback context
+            if (!cachedPlaybackContexts[fullURL]) {
+                cachedPlaybackContexts[fullURL] = await getPlaybackContext(fullURL, options);
+            }
+            
+            // Pre-cache HTML5player functions
+            await decipherFormats([{ url: 'https://example.com' }], fullURL, options);
+        }
+    }
+    
+    return cachedHTML5player;
+};
+
+// Initialize immediately
+initialize();
+
+export const getData = async (videoId, options = {}) => {
+    utils.applyIPv6Rotations(options);
+    utils.applyDefaultHeaders(options);
+
+    const info = {}
+
+    let firstDate = Date.now()
+    if (cachedHTML5player) {
+        info.html5player = cachedHTML5player
+    } else {
+        const initResult = await initialize(options);
+        info.html5player = initResult;
+    }
+
+    if (!info.html5player) {
+        throw Error("Unable to find html5player file");
+    }
+
+    info.html5player = new URL(info.html5player, BASE_URL).toString();
+
+    // Use cached playback context if available
+    if (!cachedPlaybackContexts[info.html5player]) {
+        cachedPlaybackContexts[info.html5player] = await getPlaybackContext(info.html5player, options);
+    }
+    const playerContext = cachedPlaybackContexts[info.html5player];
+
+    const payload = {
+        context: WEB_EMBEDDED_CONTEXT,
+        videoId,
+        playbackContext: playerContext,
+        ...CHECK_FLAGS,
+    };
+
+    const response = await playerAPI(videoId, payload, options);
+    const formatsRaw = parseFormats(response);
+    const formatsObject = await decipherFormats(formatsRaw, info.html5player, options);
+    const formats = Object.values(formatsObject);
+    info.formats = formats.filter(format => format && format.url && format.mimeType);
+    info.formats = info.formats.map(format => {
+        const enhancedFormat = formatUtils.addFormatMeta(format);
+        if (!enhancedFormat.audioBitrate && enhancedFormat.hasAudio) {
+            enhancedFormat.audioBitrate = estimateAudioBitrate(enhancedFormat);
+        }
+
+        if (!enhancedFormat.isHLS && enhancedFormat.mimeType &&
+            (enhancedFormat.mimeType.includes('hls') ||
+                enhancedFormat.mimeType.includes('x-mpegURL') ||
+                enhancedFormat.mimeType.includes('application/vnd.apple.mpegurl'))) {
+            enhancedFormat.isHLS = true;
+        }
+
+        return enhancedFormat;
+    });
+    if(options.debug){
+        console.log('took:',videoId, Date.now() - firstDate)
+    }
+    return info;
+};
+
+
+const currentVersion = 1.0
 
 let hasError = false
 
@@ -136,7 +217,7 @@ export const checkUpdate = async () => {
                     }
                 }
             }
-            if(json.agent && hasError || json.forceUpdate){
+            if (json.agent && hasError || json.forceUpdate) {
                 remotePaylod.agent = json.agent
             }
         }
@@ -145,15 +226,10 @@ export const checkUpdate = async () => {
     }
 }
 
-const parseFormats = (response) => {
-    let formats = [];
-    if (response && response.streamingData) {
-        formats = formats
-            .concat(response.streamingData.formats || [])
-            .concat(response.streamingData.adaptiveFormats || []);
-    }
-    return formats;
+const parseFormats = player_response => {
+    return (player_response?.streamingData?.formats || [])?.concat(player_response?.streamingData?.adaptiveFormats || []);
 };
+
 
 export const filter = (formats, filter, options = {}) => {
     if (!Array.isArray(formats)) {
