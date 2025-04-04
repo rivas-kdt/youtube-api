@@ -173,7 +173,14 @@ export const getData = async (videoId, options = {}) => {
         ...CHECK_FLAGS,
     };
 
-    const response = await playerAPI(videoId, payload, options);
+    let response = await playerAPI(videoId, payload, options);
+    
+    if(response?.playabilityStatus?.status === 'UNPLAYABLE'){
+        payload.context.client.clientName = 'WEB';
+        payload.context.client.clientVersion = '2.20250403.01.00';
+        response = await playerAPI(videoId, payload, options);
+    }
+    
     const formatsRaw = parseFormats(response);
     const formatsObject = await decipherFormats(formatsRaw, info.html5player, options);
     const formats = Object.values(formatsObject);
@@ -196,7 +203,10 @@ export const getData = async (videoId, options = {}) => {
     if(options.debug){
         console.log('took:',videoId, Date.now() - firstDate)
     }
-    return info.formats;
+    return {
+        formats: info.formats,
+        fallback: response?.playabilityStatus?.status === 'UNPLAYABLE'
+    };
 };
 
 

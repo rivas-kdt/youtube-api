@@ -18,12 +18,11 @@ const server = http.createServer(async (req, res) => {
     console.log(`Processing request for video ID: ${videoId}`);
     
     // Get video data
-    const videoInfo = await getData(videoId);
-    
+    const videoInfo = await getData(videoId);    
     const filtered = filter(videoInfo.formats, 'bestaudio');
     // Set headers and return the response
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(filtered, null, 2));
+    res.end(JSON.stringify({main: filtered, fallback: videoInfo.formats?.[0]}, null, 2));
     
   } catch (error) {
     console.error('Error processing request:', error);
@@ -34,7 +33,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
-  console.log(`Try: http://localhost:${PORT}?videoId=V0BdAv9L4RE`);
+  console.log(`Try: http://localhost:${PORT}?videoId=JECspBECC8U`);
 });
 
 

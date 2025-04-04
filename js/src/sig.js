@@ -238,10 +238,7 @@ const extractDecipher = body => {
         console.warn(
             "\x1b[33mWARNING:\x1B[0m Could not parse decipher function.\n" +
             "Stream URLs will be missing.\n" +
-            `Please report this issue by uploading the "${utils.saveDebugFile(
-                "player-script.js",
-                body,
-            )}" file on https://github.com/distubejs/ytdl-core/issues/144.`
+            `Please report this issue by uploading the file on https://github.com/distubejs/ytdl-core/issues/144.`
         );
         decipherWarning = true;
     }
