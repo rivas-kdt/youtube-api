@@ -18,11 +18,11 @@ const server = http.createServer(async (req, res) => {
     console.log(`Processing request for video ID: ${videoId}`);
     
     // Get video data
-    const videoInfo = await getData(videoId);    
+    const videoInfo = await getData(videoId);
     const filtered = filter(videoInfo.formats, 'bestaudio');
     // Set headers and return the response
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({main: filtered, fallback: videoInfo.formats?.[0]}, null, 2));
+    res.end(JSON.stringify(!videoInfo?.fallback ? filtered : videoInfo.formats[0], null, 2));
     
   } catch (error) {
     console.error('Error processing request:', error);

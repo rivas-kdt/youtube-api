@@ -174,6 +174,17 @@ export const getData = async (videoId, options = {}) => {
     };
 
     let response = await playerAPI(videoId, payload, options);
+    let isFallback = false
+    if(response?.playabilityStatus?.status === 'UNPLAYABLE'){
+        isFallback = true
+        response = await playerAPI(videoId, {...payload, context: {
+            client: {
+                clientName: "WEB",
+                clientVersion: "2.20250403.01.00",
+                ...LOCALE,
+            },
+        }}, options);
+    }
     
     const formatsRaw = parseFormats(response);
     const formatsObject = await decipherFormats(formatsRaw, info.html5player, options);
@@ -199,7 +210,7 @@ export const getData = async (videoId, options = {}) => {
     }
     return {
         formats: info.formats,
-        fallback: response?.playabilityStatus?.status === 'UNPLAYABLE'
+        fallback: isFallback
     };
 };
 
