@@ -196,7 +196,7 @@ export const getData = async (videoId, options = {}) => {
     if(options.debug){
         console.log('took:',videoId, Date.now() - firstDate)
     }
-    return info;
+    return info.formats;
 };
 
 
