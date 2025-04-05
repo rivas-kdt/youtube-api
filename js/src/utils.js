@@ -83,21 +83,54 @@ const normalizeIP = ip => {
     return full.map(part => parseInt(part || "0", 16));
 };
 
-class UnrecoverableError extends Error {}
+class UnrecoverableError extends Error { }
 
 
 export const playError = player_response => {
     const playability = player_response?.playabilityStatus;
     if (!playability) return null;
     if (["ERROR", "LOGIN_REQUIRED"].includes(playability.status)) {
-      return new UnrecoverableError(playability.reason || playability.messages?.[0]);
+        return new UnrecoverableError(playability.reason || playability.messages?.[0]);
     }
     if (playability.status === "LIVE_STREAM_OFFLINE") {
-      return new UnrecoverableError(playability.reason || "The live stream is offline.");
+        return new UnrecoverableError(playability.reason || "The live stream is offline.");
     }
     if (playability.status === "UNPLAYABLE") {
-      return new UnrecoverableError(playability.reason || "This video is unavailable.");
+        return new UnrecoverableError(playability.reason || "This video is unavailable.");
     }
     return null;
-  };
-  
+};
+
+const between = (haystack, left, right) => {
+    let pos;
+    if (left instanceof RegExp) {
+        const match = haystack.match(left);
+        if (!match) {
+            return "";
+        }
+        pos = match.index + match[0].length;
+    } else {
+        pos = haystack.indexOf(left);
+        if (pos === -1) {
+            return "";
+        }
+        pos += left.length;
+    }
+    haystack = haystack.slice(pos);
+    pos = haystack.indexOf(right);
+    if (pos === -1) {
+        return "";
+    }
+    haystack = haystack.slice(0, pos);
+    return haystack;
+};
+
+export const tryParseBetween = (body, left, right, prepend = "", append = "") => {
+    try {
+        let data = between(body, left, right);
+        if (!data) return null;
+        return JSON.parse(`${prepend}${data}${append}`);
+    } catch (e) {
+        return null;
+    }
+};

@@ -1,8 +1,10 @@
-import { chooseFormat, filter, getData } from './index.js';
+import { filter, getData, initialize } from './index.js';
 import http from 'http';
 import url from 'url';
 
 const PORT = 3200;
+
+initialize()
 
 const server = http.createServer(async (req, res) => {
   try {

@@ -54,10 +54,10 @@ const playerAPI = async (videoId, payload, options) => {
         },
         body: JSON.stringify(payload),
     };
-
+    if (options.visitorId) opts.headers["X-Goog-Visitor-Id"] = options.visitorId;
     const response = await fetch(url, opts);
     const data = await response.json();
-    return data;
+    return data
     const playErr = utils.playError(data);
     if (playErr) throw playErr;
     if (!data.videoDetails || videoId !== data.videoDetails.videoId) {
@@ -108,37 +108,158 @@ const WEB_EMBEDDED_CONTEXT = {
         ...LOCALE,
     },
 };
-
+const TVHTML5_CONTEXT = {
+    client: {
+        clientName: "TVHTML5",
+        clientVersion: "7.20240724.13.00",
+        ...LOCALE,
+    },
+};
 let cachedHTML5player
 let cachedPlaybackContexts = {}
+let cachedVisitorData = null;  // Just a single value now, not an object
+const sampleVideoId = 'JECspBECC8U';
+
+// Middleware function to get visitor data with caching
+const getVisitorDataWithCache = async (videoId, options) => {
+    // If we already have cached visitor data, use it
+    if (cachedVisitorData) {
+        return cachedVisitorData;
+    } 
+    // Otherwise fetch and cache it
+    else {
+        try {
+            const retryOptions = Object.assign({}, options.requestOptions);
+            const watchInfo = await retryFunc(getWatchHTMLPage, [videoId, retryOptions], retryOptions);
+            const visitorId = getVisitorData(watchInfo, options);
+            if (visitorId) {
+                cachedVisitorData = visitorId;  // Cache a single value
+                return visitorId;
+            }
+        } catch (e) {
+            // Return undefined if we can't get a visitor ID
+            console.log(e)
+        }
+    }
+    return undefined;
+};
 
 // Initialize function to pre-cache necessary data
 export const initialize = async (options = {}) => {
-    const sampleVideoId = 'V0BdAv9L4RE';
-    
     if (!cachedHTML5player) {
-        cachedHTML5player = getHTML5player(await getWatchHTMLPageBody(sampleVideoId, options)) || 
-                            getHTML5player(await getEmbedPageBody(sampleVideoId, options));
-        
+        cachedHTML5player = getHTML5player(await getWatchHTMLPageBody(sampleVideoId, options)) ||
+            getHTML5player(await getEmbedPageBody(sampleVideoId, options));
+
         if (cachedHTML5player) {
             const fullURL = new URL(cachedHTML5player, BASE_URL).toString();
             cachedHTML5player = fullURL;
-            
+
             // Pre-cache playback context
             if (!cachedPlaybackContexts[fullURL]) {
                 cachedPlaybackContexts[fullURL] = await getPlaybackContext(fullURL, options);
             }
-            
+
             // Pre-cache HTML5player functions
             await decipherFormats([{ url: 'https://example.com' }], fullURL, options);
+            
+            // Pre-cache visitor data
+            if (!cachedVisitorData) {
+                await getVisitorDataWithCache(sampleVideoId, options);
+            }
         }
     }
-    
+
     return cachedHTML5player;
 };
 
-// Initialize immediately
-initialize();
+const getVisitorData = (info, _options) => {
+    for (const respKey of ["player_response", "response"]) {
+        try {
+            return info[respKey].responseContext.serviceTrackingParams
+                .find(x => x.service === "GFEEDBACK").params
+                .find(x => x.key === "visitor_data").value;
+        }
+        catch { /* not present */ }
+    }
+    return undefined;
+};
+
+const jsonClosingChars = /^[)\]}'\s]+/;
+const parseJSON = (source, varName, json) => {
+    if (!json || typeof json === "object") {
+        return json;
+    } else {
+        try {
+            json = json.replace(jsonClosingChars, "");
+            return JSON.parse(json);
+        } catch (err) {
+            throw Error(`Error parsing ${varName} in ${source}: ${err.message}`);
+        }
+    }
+};
+
+const findJSON = (source, varName, body, left, right, prependJSON) => {
+    const jsonStr = utils.between(body, left, right);
+    if (!jsonStr) {
+        throw Error(`Could not find ${varName} in ${source}`);
+    }
+    return parseJSON(source, varName, utils.cutAfterJS(`${prependJSON}${jsonStr}`));
+};
+
+const findPlayerResponse = (source, info) => {
+    if (!info) return {};
+    const player_response =
+        info.args?.player_response || info.player_response || info.playerResponse || info.embedded_player_response;
+    return parseJSON(source, "player_response", player_response);
+};
+const retryFunc = async (func, args, options) => {
+    let currentTry = 0,
+        result;
+    if (!options.maxRetries) options.maxRetries = 3;
+    if (!options.backoff) options.backoff = { inc: 500, max: 5000 };
+    while (currentTry <= options.maxRetries) {
+        try {
+            result = await func(...args);
+            break;
+        } catch (err) {
+            if (err?.statusCode < 500 || currentTry >= options.maxRetries) throw err;
+            const wait = Math.min(++currentTry * options.backoff.inc, options.backoff.max);
+            await new Promise(resolve => setTimeout(resolve, wait));
+        }
+    }
+    return result;
+};
+const getWatchHTMLPage = async (id, options) => {
+    const body = await getWatchHTMLPageBody(id, options);
+    const info = { page: "watch" };
+    try {
+        try {
+            info.player_response =
+                utils.tryParseBetween(body, "var ytInitialPlayerResponse = ", "}};", "", "}}") ||
+                utils.tryParseBetween(body, "var ytInitialPlayerResponse = ", ";var") ||
+                utils.tryParseBetween(body, "var ytInitialPlayerResponse = ", ";</script>") ||
+                findJSON("watch.html", "player_response", body, /\bytInitialPlayerResponse\s*=\s*\{/i, "</script>", "{");
+        } catch (_e) {
+            let args = findJSON("watch.html", "player_response", body, /\bytplayer\.config\s*=\s*{/, "</script>", "{");
+            info.player_response = findPlayerResponse("watch.html", args);
+        }
+
+        info.response =
+            utils.tryParseBetween(body, "var ytInitialData = ", "}};", "", "}}") ||
+            utils.tryParseBetween(body, "var ytInitialData = ", ";</script>") ||
+            utils.tryParseBetween(body, 'window["ytInitialData"] = ', "}};", "", "}}") ||
+            utils.tryParseBetween(body, 'window["ytInitialData"] = ', ";</script>") ||
+            findJSON("watch.html", "response", body, /\bytInitialData("\])?\s*=\s*\{/i, "</script>", "{");
+        info.html5player = getHTML5player(body);
+    } catch (_) {
+        throw Error(
+            "Error when parsing watch.html, maybe YouTube made a change.\n" +
+            `Please report this issue with the file on https://github.com/distubejs/ytdl-core/issues.`,
+        );
+    }
+    return info;
+};
+
 
 export const getData = async (videoId, options = {}) => {
     utils.applyIPv6Rotations(options);
@@ -167,25 +288,26 @@ export const getData = async (videoId, options = {}) => {
     const playerContext = cachedPlaybackContexts[info.html5player];
 
     const payload = {
-        context: WEB_EMBEDDED_CONTEXT,
+        context: TVHTML5_CONTEXT,
         videoId,
         playbackContext: playerContext,
         ...CHECK_FLAGS,
     };
 
+    if (!options.visitorId) {
+        options.visitorId = await getVisitorDataWithCache(videoId, options);
+    }
+
     let response = await playerAPI(videoId, payload, options);
     let isFallback = false
-    if(response?.playabilityStatus?.status === 'UNPLAYABLE'){
-        isFallback = true
-        response = await playerAPI(videoId, {...payload, context: {
-            client: {
-                clientName: "WEB",
-                clientVersion: "2.20250403.01.00",
-                ...LOCALE,
-            },
-        }}, options);
-    }
     
+    if (response?.playabilityStatus?.status === 'UNPLAYABLE') {
+        response = await playerAPI(videoId, {
+            ...payload, 
+            context: WEB_EMBEDDED_CONTEXT
+        }, options);
+    }
+
     const formatsRaw = parseFormats(response);
     const formatsObject = await decipherFormats(formatsRaw, info.html5player, options);
     const formats = Object.values(formatsObject);
@@ -205,8 +327,8 @@ export const getData = async (videoId, options = {}) => {
 
         return enhancedFormat;
     });
-    if(options.debug){
-        console.log('took:',videoId, Date.now() - firstDate)
+    if (options.debug) {
+        console.log('took:', videoId, Date.now() - firstDate)
     }
     return {
         formats: info.formats,
