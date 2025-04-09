@@ -1,5 +1,0 @@
-# .gitignore
-build/
-dist/
-*.egg-info/
-python/hydra_youtube_api/__pycache__
