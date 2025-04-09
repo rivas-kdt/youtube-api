@@ -135,6 +135,10 @@ export const tryParseBetween = (body, left, right, prepend = "", append = "") =>
     }
 };
 
+export const saveDebugFile = (name, body) => {
+   console.log(body);
+};
+
 
 /**
  * Match begin and end braces of input JS, return only JS
