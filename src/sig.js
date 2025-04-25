@@ -1,5 +1,4 @@
 import Cache from './cache.js';
-import * as utils from './utils.js';
 import vm from 'vm';
 const cache = new Cache(1);
 
@@ -33,12 +32,12 @@ export const getFunctions = (html5playerfile, options) => {
     if (cachedFunctions[html5playerfile]) {
         return Promise.resolve(cachedFunctions[html5playerfile]);
     }
-    
+
     // Cache check and fetch using the existing cache mechanism
     return cache.getOrSet(html5playerfile, async () => {
         const response = await fetch(html5playerfile, options.requestOptions);
         const body = await response.text();
-        const functions = extractFunctions(body);        
+        const functions = extractFunctions(body);
         // Store in memory cache for faster access
         cachedFunctions[html5playerfile] = functions;
         return functions;
@@ -77,6 +76,16 @@ const FUNCTION_TCE_REGEXP =
     "\\s*((?:(?:\\w=)?[a-zA-Z_\\$][a-zA-Z0-9_\\$]*(?:\\[\\\"|\\.)[a-zA-Z_\\$][a-zA-Z0-9_\\$]*(?:\\\"\\]|)\\(\\w,\\d+\\);)+)" +
     "return \\w\\.join\\((?:\"\"|[a-zA-Z0-9_$]*\\[\\d+])\\)}";
 
+const SIG_FUNCTION_TCE_PATTERN =
+    "function\\(\\s*([a-zA-Z0-9$])\\s*\\)\\s*\\{" +
+    "\\s*\\1\\s*=\\s*\\1\\[(\\w+)\\[\\d+\\]\\]\\(\\2\\[\\d+\\]\\);" +
+    "([a-zA-Z0-9$]+)\\[\\2\\[\\d+\\]\\]\\(\\s*\\1\\s*,\\s*\\d+\\s*\\);" +
+    "\\s*\\3\\[\\2\\[\\d+\\]\\]\\(\\s*\\1\\s*,\\s*\\d+\\s*\\);" +
+    ".*?return\\s*\\1\\[\\2\\[\\d+\\]\\]\\(\\2\\[\\d+\\]\\)\\};";
+
+const TCE_SIG_FUNCTION_ACTIONS_PATTERN =
+    "var\\s*([a-zA-Z0-9$_]+)\\s*=\\s*\\{\\s*[a-zA-Z0-9$_]+\\s*:\\s*function\\((\\w+|\\s*\\w+\\s*,\\s*\\w+\\s*)\\)\\s*\\{\\s*(\\s*var\\s*\\w+=\\w+\\[\\d+\\];\\w+\\[\\d+\\]\\s*=\\s*\\w+\\[\\w+\\s*\\%\\s*\\w+\\[\\w+\\[\\d+\\]\\]\\];\\s*\\w+\\[\\w+\\s*%\\s*\\w+\\[\\w+\\[\\d+\\]\\]\\]\\s*=\\s*\\w+\\s*\\},|\\w+\\[\\w+\\[\\d+\\]\\]\\(\\)\\},)\\s*[a-zA-Z0-9$_]+\\s*:\\s*function\\((\\s*\\w+\\w*,\\s*\\w+\\s*|\\w+)\\)\\s*\\{(\\w+\\[\\w+\\[\\d+\\]\\]\\(\\)|\\s*var\\s*\\w+\\s*=\\s*\\w+\\[\\d+\\]\\s*;\\w+\\[\\d+\\]\\s*=\\w+\\[\\s*\\w+\\s*%\\s*\\w+\\[\\w+\\[\\d+\\]\\]\\]\\s*;\\w+\\[\\s*\\w+\\s*%\\s*\\w\\[\\w+\\[\\d+\\]\\]\\]\\s*=\\s*\\w+\\s*)\\},\\s*[a-zA-Z0-9$_]+\\s*:\\s*function\\s*\\(\\s*\\w+\\s*,\\s*\\w+\\s*\\)\\{\\w+\\[\\w+\\[\\d+\\]\\]\\(\\s*\\d+\\s*,\\s*\\w+\\s*\\)\\}\\};";
+
 const N_TRANSFORM_REGEXP =
     "function\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
     "var\\s*(\\w+)=(?:\\1\\.split\\(.*?\\)|String\\.prototype\\.split\\.call\\(\\1,.*?\\))," +
@@ -89,8 +98,11 @@ const N_TRANSFORM_TCE_REGEXP =
     "function\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
     "\\s*var\\s*(\\w+)=\\1\\.split\\(\\1\\.slice\\(0,0\\)\\),\\s*(\\w+)=\\[.*?];" +
     ".*?catch\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
-    "\\s*return(?:\"[^\"]+\"|\\s*[a-zA-Z_0-9$]*\\[\\d+])\\s*\\+\\s*\\1\\s*}" +
+    "\\s*return(?:\"[^\"]+\"|\\s*[a-zA-Z0-9_$]*\\[\\d+])\\s*\\+\\s*\\1\\s*}" +
     "\\s*return\\s*\\2\\.join\\((?:\"\"|[a-zA-Z_0-9$]*\\[\\d+])\\)};";
+
+const N_FUNCTION_TCE_PATTERN =
+    "function\\s*\\((\\w+)\\)\\s*\\{var\\s*\\w+\\s*=\\s*\\1\\[\\w+\\[\\d+\\]\\]\\(\\w+\\[\\d+\\]\\)\\s*,\\s*\\w+\\s*=\\s*\\[.*?\\]\\;.*?catch\\(\\s*(\\w+)\\s*\\s*\\)\\s*\\{return\\s*\\w+\\[\\d+\\](\\+\\1)?\\}\\s*return\\s*\\w+\\[\\w+\\[\\d+\\]\\]\\(\\w+\\[\\d+\\]\\)\\}\\;";
 
 const TCE_GLOBAL_VARS_REGEXP =
     "(?:^|[;,])\\s*(var\\s+([\\w$]+)\\s*=\\s*" +
@@ -101,7 +113,28 @@ const TCE_GLOBAL_VARS_REGEXP =
     "\\))" +
     "|" +
     "\\[\\s*(?:([\"'])(?:\\\\.|[^\\\\])*?\\6\\s*,?\\s*)+\\]" +
+    "|" +
+    "\"[^\"]*\"\\.split\\(\"[^\"]*\"\\)" +
     "))(?=\\s*[,;])";
+
+const TCE_GLOBAL_VARS_PATTERN_JAVA =
+    "('use\\s*strict';)?" +
+    "(?<code>var\\s*" +
+    "(?<varname>[a-zA-Z0-9_$]+)\\s*=\\s*" +
+    "(?<value>" +
+    "(?:\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*')" +
+    "\\.split\\(" +
+    "(?:\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*')" +
+    "\\)" +
+    "|" +
+    "\\[" +
+    "(?:(?:\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"|'[^'\\\\]*(?:\\\\.[^'\\\\]*)*')" +
+    "\\s*,?\\s*)*" +
+    "\\]" +
+    "|" +
+    "\"[^\"]*\"\\.split\\(\"[^\"]*\"\\)" +
+    ")" +
+    ")";
 
 const PATTERN_PREFIX = "(?:^|,)\\\"?(" + VARIABLE_PART + ")\\\"?";
 const REVERSE_PATTERN = new RegExp(PATTERN_PREFIX + REVERSE_PART, "m");
@@ -114,20 +147,141 @@ const N_ARGUMENT = "ncode";
 const DECIPHER_FUNC_NAME = "DisTubeDecipherFunc";
 const N_TRANSFORM_FUNC_NAME = "DisTubeNTransformFunc";
 
+class TCEVariable {
+    constructor(name, code, value) {
+        this.name = name;
+        this.code = code;
+        this.value = value;
+    }
+
+    getEscapedName() {
+        return this.name.replace(/\$/g, "\\$");
+    }
+
+    getName() {
+        return this.name;
+    }
+
+    getCode() {
+        return this.code;
+    }
+
+    getValue() {
+        return this.value;
+    }
+}
+
+
 const extractDollarEscapedFirstGroup = (pattern, text) => {
     const match = text.match(pattern);
     return match ? match[1].replace(/\$/g, "\\$") : null;
 };
 
+
+const extractNFunctionTCE = (body, tceVariable) => {
+    if (!tceVariable) return null;
+
+    try {
+        const nFunctionMatch = body.match(new RegExp(N_FUNCTION_TCE_PATTERN, "s"));
+        if (!nFunctionMatch) {
+            const nTceMatch = body.match(new RegExp(N_TRANSFORM_TCE_REGEXP, "s"));
+            if (!nTceMatch) return null;
+            return nTceMatch[0];
+        }
+
+        let nFunction = nFunctionMatch[0];
+        const shortCircuitPattern = new RegExp(
+            `;\\s*if\\s*\\(\\s*typeof\\s+[a-zA-Z0-9_$]+\\s*===?\\s*(?:"undefined"|'undefined'|${tceVariable.getEscapedName()}\\[\\d+\\])\\s*\\)\\s*return\\s+\\w+;`
+        );
+
+        if (shortCircuitPattern.test(nFunction)) {
+            nFunction = nFunction.replace(shortCircuitPattern, ";");
+        } else {
+            const paramMatch = nFunction.match(/function\s*\(\s*(\w+)\s*\)/);
+            if (paramMatch) {
+                const paramName = paramMatch[1];
+                nFunction = nFunction.replace(
+                    new RegExp(`if\\s*\\(typeof\\s*[^\\s()]+\\s*===?.*?\\)return ${paramName}\\s*;?`, "g"),
+                    ""
+                );
+            }
+        }
+
+        return nFunction;
+    } catch (e) {
+        return null;
+    }
+};
+
+const extractTCEVariable = (body) => {
+    const tceVarsMatch = body.match(new RegExp(TCE_GLOBAL_VARS_REGEXP, "m"));
+    if (tceVarsMatch) {
+        return new TCEVariable(
+            tceVarsMatch[2],
+            tceVarsMatch[1],
+            tceVarsMatch[1].split("=")[1].trim()
+        );
+    }
+
+    const tceVarsMatchJava = body.match(new RegExp(TCE_GLOBAL_VARS_PATTERN_JAVA));
+    if (tceVarsMatchJava && tceVarsMatchJava.groups) {
+        return new TCEVariable(
+            tceVarsMatchJava.groups.varname,
+            tceVarsMatchJava.groups.code,
+            tceVarsMatchJava.groups.value
+        );
+    }
+
+    return null;
+};
+
+const extractSigFunctionTCE = (body, tceVariable) => {
+    if (!tceVariable) return null;
+
+    try {
+        const sigFunctionMatch = body.match(new RegExp(SIG_FUNCTION_TCE_PATTERN));
+        if (!sigFunctionMatch) return null;
+        const sigFunctionActionsMatch = body.match(new RegExp(TCE_SIG_FUNCTION_ACTIONS_PATTERN));
+        if (!sigFunctionActionsMatch) return null;
+
+        return {
+            sigFunction: sigFunctionMatch[0],
+            sigFunctionActions: sigFunctionActionsMatch[0],
+            actionVarName: sigFunctionActionsMatch[1] || "Dw"
+        };
+    } catch (e) {
+        return null;
+    }
+};
+
 const extractDecipherFunc = (body) => {
     try {
+        const tceVariable = extractTCEVariable(body);
+        if (tceVariable) {
+
+            const tceSigResult = extractSigFunctionTCE(body, tceVariable);
+            const nFunction = extractNFunctionTCE(body, tceVariable);
+
+            if (tceSigResult && nFunction) {
+                const { sigFunction, sigFunctionActions, actionVarName } = tceSigResult;
+                return {
+                    script: `${tceVariable.getCode()}\n${sigFunctionActions}\nvar ${DECIPHER_FUNC_NAME}=${sigFunction};\nvar ${N_TRANSFORM_FUNC_NAME}=${nFunction};\n`,
+                    decipher: `${DECIPHER_FUNC_NAME}(${DECIPHER_ARGUMENT});`,
+                    nTransform: `${N_TRANSFORM_FUNC_NAME}(${N_ARGUMENT});`,
+                    isTCE: true
+                };
+            } else {
+            }
+        }
+
         const helperMatch = body.match(new RegExp(HELPER_REGEXP, "s"));
-        if (!helperMatch) return null;
+        if (!helperMatch) {
+            return null;
+        }
 
         const helperObject = helperMatch[0];
         const actionBody = helperMatch[2];
         const helperName = helperMatch[1];
-
         const reverseKey = extractDollarEscapedFirstGroup(REVERSE_PATTERN, actionBody);
         const sliceKey = extractDollarEscapedFirstGroup(SLICE_PATTERN, actionBody);
         const spliceKey = extractDollarEscapedFirstGroup(SPLICE_PATTERN, actionBody);
@@ -137,7 +291,9 @@ const extractDecipherFunc = (body) => {
             .filter(Boolean)
             .map(key => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 
-        if (quotedFunctions.length === 0) return null;
+        if (quotedFunctions.length === 0) {
+            return null;
+        }
 
         let funcMatch = body.match(new RegExp(DECIPHER_REGEXP, "s"));
         let isTce = false;
@@ -147,7 +303,9 @@ const extractDecipherFunc = (body) => {
             decipherFunc = funcMatch[0];
         } else {
             const tceFuncMatch = body.match(new RegExp(FUNCTION_TCE_REGEXP, "s"));
-            if (!tceFuncMatch) return null;
+            if (!tceFuncMatch) {
+                return null;
+            }
 
             decipherFunc = tceFuncMatch[0];
             isTce = true;
@@ -160,19 +318,30 @@ const extractDecipherFunc = (body) => {
                 tceVars = tceVarsMatch[1] + ";\n";
             }
         }
+        const result = {
+            script: tceVars + helperObject + "\nvar " + DECIPHER_FUNC_NAME + "=" + decipherFunc + ";\n",
+            decipher: DECIPHER_FUNC_NAME + "(" + DECIPHER_ARGUMENT + ");",
+            isTCE: false
+        };
 
-        const resultFunc = tceVars + helperObject + "\nvar " + DECIPHER_FUNC_NAME + "=" + decipherFunc + ";\n";
-        const callerFunc = DECIPHER_FUNC_NAME + "(" + DECIPHER_ARGUMENT + ");";
-
-        return resultFunc + callerFunc;
+        return result;
     } catch (e) {
-        console.error("Error in extractDecipherFunc:", e);
         return null;
     }
 };
 
 const extractNTransformFunc = (body) => {
     try {
+        const tceVariable = extractTCEVariable(body);
+        if (tceVariable) {
+            const nFunction = extractNFunctionTCE(body, tceVariable);
+            if (nFunction) {
+                return {
+                    already: true
+                };
+            }
+        }
+
         let nMatch = body.match(new RegExp(N_TRANSFORM_REGEXP, "s"));
         let isTce = false;
         let nFunction;
@@ -181,17 +350,20 @@ const extractNTransformFunc = (body) => {
             nFunction = nMatch[0];
         } else {
             const nTceMatch = body.match(new RegExp(N_TRANSFORM_TCE_REGEXP, "s"));
-            if (!nTceMatch) return null;
+            if (!nTceMatch) {
+                return null;
+            }
 
             nFunction = nTceMatch[0];
             isTce = true;
         }
 
         const paramMatch = nFunction.match(/function\s*\(\s*(\w+)\s*\)/);
-        if (!paramMatch) return null;
+        if (!paramMatch) {
+            return null;
+        }
 
         const paramName = paramMatch[1];
-
         const cleanedFunction = nFunction.replace(
             new RegExp(`if\\s*\\(typeof\\s*[^\\s()]+\\s*===?.*?\\)return ${paramName}\\s*;?`, "g"),
             ""
@@ -205,12 +377,13 @@ const extractNTransformFunc = (body) => {
             }
         }
 
-        const resultFunc = tceVars + "var " + N_TRANSFORM_FUNC_NAME + "=" + cleanedFunction + ";\n";
-        const callerFunc = N_TRANSFORM_FUNC_NAME + "(" + N_ARGUMENT + ");";
-
-        return resultFunc + callerFunc;
+        const result = {
+            script: tceVars + "var " + N_TRANSFORM_FUNC_NAME + "=" + cleanedFunction + ";\n",
+            nTransform: N_TRANSFORM_FUNC_NAME + "(" + N_ARGUMENT + ");",
+            isTCE: false
+        };
+        return result;
     } catch (e) {
-        console.error("Error in extractNTransformFunc:", e);
         return null;
     }
 };
@@ -220,49 +393,114 @@ let nTransformWarning = false;
 
 const getExtractFunction = (extractFunctions, body, postProcess = null) => {
     for (const extractFunction of extractFunctions) {
-      try {
-        const func = extractFunction(body);
-        if (!func) continue;
-        return new vm.Script(postProcess ? postProcess(func) : func);
-      } catch (err) {
-        console.error("Failed to extract function:", err);
-        continue;
-      }
+        try {
+            const func = extractFunction(body);
+            if (!func) continue;
+            return new vm.Script(postProcess ? postProcess(func) : func);
+        } catch (err) {
+            console.error("Failed to extract function:", err);
+            continue;
+        }
     }
     return null;
-  };
-  
+};
+
+
 const extractDecipher = body => {
-    const decipherFunc = getExtractFunction([extractDecipherFunc], body);
-    if (!decipherFunc && !decipherWarning) {
-        console.warn(
-            "\x1b[33mWARNING:\x1B[0m Could not parse decipher function.\n" +
-            "Stream URLs will be missing.\n" +
-            `Please report this issue by uploading the file on https://github.com/distubejs/ytdl-core/issues/144.`
-        );
-        decipherWarning = true;
+    try {
+        const decipherFuncResult = extractDecipherFunc(body);
+        if (!decipherFuncResult && !decipherWarning) {
+            console.warn(
+                "\x1b[33mWARNING:\x1B[0m Could not parse decipher function.\n" +
+                "Stream URLs will be missing.\n" +
+                `Please report this issue by uploading the file on https://github.com/hydralerne/youtube-api/issues.`
+            );
+            decipherWarning = true;
+        }
+
+        if (decipherFuncResult) {
+            try {
+                if (decipherFuncResult.isTCE) {
+                    const scriptText = decipherFuncResult.script + '\n' + decipherFuncResult.decipher;
+                    return new vm.Script(scriptText);
+                }
+                const scriptText = decipherFuncResult.script + '\n' + decipherFuncResult.decipher;
+                return new vm.Script(scriptText);
+            } catch (err) {
+            }
+        }
+
+        return null;
+    } catch (error) {
+        return null;
     }
-    return decipherFunc;
 };
 
-const extractNTransform = body => {
-    const nTransformFunc = getExtractFunction([extractNTransformFunc], body);
 
-    if (!nTransformFunc && !nTransformWarning) {
-        console.warn(
-            "\x1b[33mWARNING:\x1B[0m Could not parse n transform function.\n" +
-            `Please report this issue by uploading the "${utils.saveDebugFile(
-                "player-script.js",
-                body,
-            )}" file on https://github.com/distubejs/ytdl-core/issues/144.`
-        );
-        nTransformWarning = true;
+const extractNTransform = (body, decipherResult) => {
+    try {
+        const decipherFuncResult = extractDecipherFunc(body);
+        if (decipherFuncResult && decipherFuncResult.isTCE && decipherFuncResult.nTransform) {
+            try {
+                const scriptText = decipherFuncResult.script + '\n' + decipherFuncResult.nTransform;
+                return new vm.Script(scriptText);
+            } catch (err) {
+            }
+        }
+
+        const nTransformFuncResult = extractNTransformFunc(body);
+        if (nTransformFuncResult && nTransformFuncResult.already) {
+            return null;
+        }
+
+        if (!nTransformFuncResult && !nTransformWarning) {
+            console.warn(
+                "\x1b[33mWARNING:\x1B[0m Could not extract n transform function.\n" +
+                `Please report this issue by uploading the file on https://github.com/hydralerne/youtube-api/issues.`
+            );
+            nTransformWarning = true;
+        }
+
+        if (nTransformFuncResult) {
+            try {
+                const scriptText = nTransformFuncResult.script + '\n' + nTransformFuncResult.nTransform;
+                return new vm.Script(scriptText);
+            } catch (err) {
+            }
+        }
+
+        return null;
+    } catch (error) {
+        return null;
     }
-
-    return nTransformFunc;
 };
 
-export const extractFunctions = body => [extractDecipher(body), extractNTransform(body)];
+export const extractFunctions = body => {
+    try {
+        const decipherResult = extractDecipher(body);
+        const nTransformResult = extractNTransform(body, decipherResult);
+        if (decipherResult) {
+            try {
+                const context = {};
+                context[DECIPHER_ARGUMENT] = "testValue";
+                decipherResult.runInNewContext(context);
+            } catch (error) {
+            }
+        }
+
+        if (nTransformResult) {
+            try {
+                const context = {};
+                context[N_ARGUMENT] = "testValue";
+                nTransformResult.runInNewContext(context);
+            } catch (error) {
+            }
+        }
+        return [decipherResult, nTransformResult];
+    } catch (error) {
+        return [null, null];
+    }
+};
 
 export const setDownloadURL = (format, decipherScript, nTransformScript) => {
     if (!format) return;
@@ -330,10 +568,10 @@ export const setDownloadURL = (format, decipherScript, nTransformScript) => {
 
     try {
         const transformedUrl = nTransform(cipher ? decipher(url) : url);
-        
+
         // Cache the transformed URL
         urlTransformCache[url] = transformedUrl;
-        
+
         format.url = transformedUrl;
         delete format.signatureCipher;
         delete format.cipher;
@@ -347,12 +585,12 @@ export const decipherFormats = async (formats, html5player, options) => {
         // Create a simple cache key based on formats and html5player
         const formatsKey = formats.map(f => f.url || f.signatureCipher || f.cipher).join(',');
         const cacheKey = `${html5player}:${formatsKey}`;
-        
+
         // Check if we have cached this exact combination
         if (cachedProcessedFormats[cacheKey]) {
             return cachedProcessedFormats[cacheKey];
         }
-        
+
         const decipheredFormats = {};
         const [decipherScript, nTransformScript] = await getFunctions(html5player, options);
 

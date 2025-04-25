@@ -160,7 +160,7 @@ export const initialize = async (options = {}) => {
             }
 
             // Pre-cache HTML5player functions
-            await decipherFormats([{ url: 'https://example.com' }], fullURL, options);
+            await decipherFormats([{ }], fullURL, options);
             
             // Pre-cache visitor data
             if (!cachedVisitorData) {
