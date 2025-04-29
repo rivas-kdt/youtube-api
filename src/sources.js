@@ -108,6 +108,7 @@ const WEB_EMBEDDED_CONTEXT = {
         ...LOCALE,
     },
 };
+
 const TVHTML5_CONTEXT = {
     client: {
         clientName: "TVHTML5",
@@ -115,17 +116,27 @@ const TVHTML5_CONTEXT = {
         ...LOCALE,
     },
 };
+
+const ANDROID_CLIENT_VERSION = "19.44.38",
+    ANDROID_OS_VERSION = "11",
+    ANDROID_SDK_VERSION = "30";
+
+const IOS_CLIENT_VERSION = "19.45.4",
+    IOS_DEVICE_MODEL = "iPhone16,2",
+    IOS_USER_AGENT_VERSION = "17_5_1",
+    IOS_OS_VERSION = "17.5.1.21F90";
+
 let cachedHTML5player
 let cachedPlaybackContexts = {}
 let cachedVisitorData = null;  // Just a single value now, not an object
-const sampleVideoId = 'JECspBECC8U';
+const sampleVideoId = 'aqz-KE-bpKQ';
 
 // Middleware function to get visitor data with caching
 const getVisitorDataWithCache = async (videoId, options) => {
     // If we already have cached visitor data, use it
     if (cachedVisitorData) {
         return cachedVisitorData;
-    } 
+    }
     // Otherwise fetch and cache it
     else {
         try {
@@ -160,8 +171,8 @@ export const initialize = async (options = {}) => {
             }
 
             // Pre-cache HTML5player functions
-            await decipherFormats([{ }], fullURL, options);
-            
+            await decipherFormats([{}], fullURL, options);
+
             // Pre-cache visitor data
             if (!cachedVisitorData) {
                 await getVisitorDataWithCache(sampleVideoId, options);
@@ -300,10 +311,10 @@ export const getData = async (videoId, options = {}) => {
 
     let response = await playerAPI(videoId, payload, options);
     let isFallback = false
-    
+
     if (response?.playabilityStatus?.status === 'UNPLAYABLE') {
         response = await playerAPI(videoId, {
-            ...payload, 
+            ...payload,
             context: WEB_EMBEDDED_CONTEXT
         }, options);
     }
