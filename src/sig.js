@@ -24,6 +24,7 @@ export const getFunctions = (html5playerfile, options) => {
 };
 
 
+
 const VARIABLE_PART = "[a-zA-Z_\\$][a-zA-Z_0-9\\$]*";
 const VARIABLE_PART_DEFINE = "\\\"?" + VARIABLE_PART + "\\\"?";
 const BEFORE_ACCESS = "(?:\\[\\\"|\\.)";
@@ -35,14 +36,14 @@ const SPLICE_PART = ":function\\(\\w,\\w\\)\\{\\w\\.splice\\(0,\\w\\)\\}";
 const SWAP_PART = ":function\\(\\w,\\w\\)\\{" +
     "var \\w=\\w\\[0\\];\\w\\[0\\]=\\w\\[\\w%\\w\\.length\\];\\w\\[\\w(?:%\\w.length|)\\]=\\w(?:;return \\w)?\\}";
 
-const DECIPHER_REGEXP = 
+const DECIPHER_REGEXP =
     "function(?: " + VARIABLE_PART + ")?\\(([a-zA-Z])\\)\\{" +
     "\\1=\\1\\.split\\(\"\"\\);\\s*" +
     "((?:(?:\\1=)?" + VARIABLE_PART + VARIABLE_PART_ACCESS + "\\(\\1,\\d+\\);)+)" +
     "return \\1\\.join\\(\"\"\\)" +
     "\\}";
 
-const HELPER_REGEXP = 
+const HELPER_REGEXP =
     "var (" + VARIABLE_PART + ")=\\{((?:(?:" +
     VARIABLE_PART_DEFINE + REVERSE_PART + "|" +
     VARIABLE_PART_DEFINE + SLICE_PART + "|" +
@@ -50,13 +51,13 @@ const HELPER_REGEXP =
     VARIABLE_PART_DEFINE + SWAP_PART +
     "),?\\n?)+)\\};";
 
-const FUNCTION_TCE_REGEXP = 
+const FUNCTION_TCE_REGEXP =
     "function(?:\\s+[a-zA-Z_\\$][a-zA-Z0-9_\\$]*)?\\(\\w\\)\\{" +
     "\\w=\\w\\.split\\((?:\"\"|[a-zA-Z0-9_$]*\\[\\d+])\\);" +
     "\\s*((?:(?:\\w=)?[a-zA-Z_\\$][a-zA-Z0-9_\\$]*(?:\\[\\\"|\\.)[a-zA-Z_\\$][a-zA-Z0-9_\\$]*(?:\\\"\\]|)\\(\\w,\\d+\\);)+)" +
     "return \\w\\.join\\((?:\"\"|[a-zA-Z0-9_$]*\\[\\d+])\\)}";
 
-const N_TRANSFORM_REGEXP = 
+const N_TRANSFORM_REGEXP =
     "function\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
     "var\\s*(\\w+)=(?:\\1\\.split\\(.*?\\)|String\\.prototype\\.split\\.call\\(\\1,.*?\\))," +
     "\\s*(\\w+)=(\\[.*?]);\\s*\\3\\[\\d+]" +
@@ -64,25 +65,25 @@ const N_TRANSFORM_REGEXP =
     '\\s*return"[\\w-]+([A-z0-9-]+)"\\s*\\+\\s*\\1\\s*}' +
     '\\s*return\\s*(\\2\\.join\\(""\\)|Array\\.prototype\\.join\\.call\\(\\2,.*?\\))};';
 
-const N_TRANSFORM_TCE_REGEXP = 
+const N_TRANSFORM_TCE_REGEXP =
     "function\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
     "\\s*var\\s*(\\w+)=\\1\\.split\\(\\1\\.slice\\(0,0\\)\\),\\s*(\\w+)=\\[.*?];" +
     ".*?catch\\(\\s*(\\w+)\\s*\\)\\s*\\{" +
     "\\s*return(?:\"[^\"]+\"|\\s*[a-zA-Z_0-9$]*\\[\\d+])\\s*\\+\\s*\\1\\s*}" +
     "\\s*return\\s*\\2\\.join\\((?:\"\"|[a-zA-Z_0-9$]*\\[\\d+])\\)};";
 
-const TCE_GLOBAL_VARS_REGEXP = 
+const TCE_GLOBAL_VARS_REGEXP =
     "(?:^|[;,])\\s*(var\\s+([\\w$]+)\\s*=\\s*" +
     "(?:" +
-    "([\"'])(?:\\\\.|[^\\\\])*?\\3" +  
+    "([\"'])(?:\\\\.|[^\\\\])*?\\3" +
     "\\s*\\.\\s*split\\((" +
-    "([\"'])(?:\\\\.|[^\\\\])*?\\5" +  
+    "([\"'])(?:\\\\.|[^\\\\])*?\\5" +
     "\\))" +
-    "|" +  
+    "|" +
     "\\[\\s*(?:([\"'])(?:\\\\.|[^\\\\])*?\\6\\s*,?\\s*)+\\]" +
     "))(?=\\s*[,;])";
 
-const NEW_TCE_GLOBAL_VARS_REGEXP = 
+const NEW_TCE_GLOBAL_VARS_REGEXP =
     "('use\\s*strict';)?" +
     "(?<code>var\\s*" +
     "(?<varname>[a-zA-Z0-9_$]+)\\s*=\\s*" +
@@ -107,7 +108,7 @@ const TCE_SIGN_FUNCTION_REGEXP = "function\\(\\s*([a-zA-Z0-9$])\\s*\\)\\s*\\{" +
     "\\s*\\3\\[\\2\\[\\d+\\]\\]\\(\\s*\\1\\s*,\\s*\\d+\\s*\\);" +
     ".*?return\\s*\\1\\[\\2\\[\\d+\\]\\]\\(\\2\\[\\d+\\]\\)\\};";
 
-const TCE_SIGN_FUNCTION_ACTION_REGEXP = "var\\s+([A-Za-z0-9_]+)\\s*=\\s*\\{\\s*(?:[A-Za-z0-9_]+)\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}\\s*,\\s*(?:[A-Za-z0-9_]+)\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}\\s*,\\s*(?:[A-Za-z0-9_]+)\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}\\s*\\};";
+const TCE_SIGN_FUNCTION_ACTION_REGEXP = "var\\s+([$A-Za-z0-9_]+)\\s*=\\s*\\{\\s*[$A-Za-z0-9_]+\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*,\\s*[$A-Za-z0-9_]+\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*,\\s*[$A-Za-z0-9_]+\\s*:\\s*function\\s*\\([^)]*\\)\\s*\\{[^{}]*(?:\\{[^{}]*}[^{}]*)*}\\s*};";
 
 const TCE_N_FUNCTION_REGEXP = "function\\s*\\((\\w+)\\)\\s*\\{var\\s*\\w+\\s*=\\s*\\1\\[\\w+\\[\\d+\\]\\]\\(\\w+\\[\\d+\\]\\)\\s*,\\s*\\w+\\s*=\\s*\\[.*?\\]\\;.*?catch\\s*\\(\\s*(\\w+)\\s*\\)\\s*\\{return\\s*\\w+\\[\\d+\\]\\s*\\+\\s*\\1\\}\\s*return\\s*\\w+\\[\\w+\\[\\d+\\]\\]\\(\\w+\\[\\d+\\]\\)\\}\\s*\\;";
 
