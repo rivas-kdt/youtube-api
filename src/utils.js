@@ -2,16 +2,45 @@ let oldIpRotationsWarning = true;
 
 export const applyDefaultHeaders = options => {
     options.requestOptions = Object.assign({}, options.requestOptions);
+    
+    // Comprehensive browser-like headers to avoid bot detection
+    const defaultHeaders = {
+        // User-Agent - Chrome on Windows (most common)
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        
+        // Accept headers that browsers send
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        
+        // Security headers that browsers send
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        
+        // Cache control
+        "Cache-Control": "max-age=0",
+        
+        // Upgrade insecure requests
+        "Upgrade-Insecure-Requests": "1",
+        
+        // Connection keep-alive (for HTTP/1.1)
+        "Connection": "keep-alive",
+        
+        // DNT (Do Not Track)
+        "DNT": "1"
+    };
+    
     options.requestOptions.headers = Object.assign(
         {},
-        {
-            // eslint-disable-next-line max-len
-            "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36",
-        },
-        options.requestOptions.headers,
+        defaultHeaders,
+        options.requestOptions.headers // User headers override defaults
     );
-}
+};
 
 export const applyIPv6Rotations = options => {
     if (options.IPv6Block) {
@@ -139,6 +168,15 @@ export const saveDebugFile = (name, body) => {
    console.log(body);
 };
 
+const ESCAPING_SEQUENZES = [
+    // Strings
+    { start: '"', end: '"' },
+    { start: "'", end: "'" },
+    { start: "`", end: "`" },
+    // RegeEx
+    { start: "/", end: "/", startPrefix: /(^|[[{:;,/])\s?$/ },
+  ];
+  
 
 /**
  * Match begin and end braces of input JS, return only JS
@@ -215,3 +253,34 @@ export const cutAfterJS = mixedJson => {
     // We ran through the whole string and ended up with an unclosed bracket
     throw Error("Can't cut unsupported JSON (no matching closing bracket found)");
 };
+
+export const getMobileHeaders = () => ({
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9", 
+    "Accept-Encoding": "gzip, deflate, br",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Cache-Control": "max-age=0",
+    "Connection": "keep-alive",
+    "DNT": "1"
+});
+
+export const getAndroidHeaders = () => ({
+    "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Sec-Fetch-Dest": "document", 
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+    "Sec-Ch-Ua-Mobile": "?1",
+    "Sec-Ch-Ua-Platform": '"Android"',
+    "Cache-Control": "max-age=0",
+    "Upgrade-Insecure-Requests": "1",
+    "Connection": "keep-alive",
+    "DNT": "1"
+});

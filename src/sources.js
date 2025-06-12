@@ -51,6 +51,8 @@ const playerAPI = async (videoId, payload, options) => {
         headers: {
             "Content-Type": "application/json",
             "X-Goog-Api-Format-Version": "2",
+            // Include browser headers from options to avoid bot detection
+            ...(options.requestOptions?.headers || {})
         },
         body: JSON.stringify(payload),
     };
@@ -265,7 +267,7 @@ const getWatchHTMLPage = async (id, options) => {
     } catch (_) {
         throw Error(
             "Error when parsing watch.html, maybe YouTube made a change.\n" +
-            `Please report this issue with the file on https://github.com/distubejs/ytdl-core/issues.`,
+            `Please report this issue with the file on https://github.com/hydralerne/youtube-api/issues.`,
         );
     }
     return info;
