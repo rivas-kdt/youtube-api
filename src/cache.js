@@ -22,6 +22,7 @@ export default class Cache extends Map {
   }
   getOrSet(key, fn) {
     if (this.has(key)) {
+      console.log('getting from cache', key)
       return this.get(key);
     } else {
       let value = fn();

@@ -7,7 +7,6 @@
 // ╚═══════════════════════════════════════════════════════╝
 
 import * as utils from './utils.js';
-import Cache from './cache.js';
 import { decipherFormats } from './sig.js';
 import * as formatUtils from './format-utils.js';
 import { request } from './requrest.js';
@@ -69,20 +68,23 @@ const playerAPI = async (videoId, payload, options) => {
     return data;
 };
 
-export const watchPageCache = new Cache();
+export const watchPageCache = new Map();
 
 const getWatchHTMLURL = (id, options) =>
     `${BASE_URL + id}&hl=${options.lang || "en"}&bpctr=${Math.ceil(Date.now() / 1000)}&has_verified=1`;
 
-const getWatchHTMLPageBody = (id, options) => {
+const getWatchHTMLPageBody = async (id, options) => {
     const url = getWatchHTMLURL(id, options);
-    return watchPageCache.getOrSet(url, async () => {
-        const response = await request(url, {
-            ...options.requestOptions,
-            method: "GET"
-        });
-        return response;
+    const cached = watchPageCache.get(url);
+    if (cached) {
+        return cached;
+    }
+    const response = await request(url, {
+        ...options.requestOptions,
+        method: "GET"
     });
+    watchPageCache.set(url, response);
+    return response;
 };
 
 const EMBED_URL = "https://www.youtube.com/embed/";

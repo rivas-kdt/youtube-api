@@ -1,26 +1,17 @@
-import Cache from './cache.js';
 import { vm } from './native-vm.js';
-const cache = new Cache(1);
+const cache = new Map();
 import querystring from 'querystring';
 import { request } from './requrest.js';
 
-// Cache for storing functions by HTML5player URL
-let cachedFunctions = {};
-
-export const getFunctions = (html5playerfile, options) => {
-    // Direct memory access for already cached functions
-    if (cachedFunctions[html5playerfile]) {
-        return Promise.resolve(cachedFunctions[html5playerfile]);
+export const getFunctions = (functionsKey, body) => {
+    const cached = cache.get(functionsKey);
+    if (cached) {
+        return cached;
     }
-
-    // Cache check and fetch using the existing cache mechanism
-    return cache.getOrSet(html5playerfile, async () => {
-        const body = await request(html5playerfile, options.requestOptions);
-        const functions = extractFunctions(body);
-        // Store in memory cache for faster access
-        cachedFunctions[html5playerfile] = functions;
-        return functions;
-    });
+    
+    const functions = extractFunctions(body);
+    cache.set(functionsKey, functions);
+    return functions;
 };
 
 
@@ -394,7 +385,15 @@ export const setDownloadURL = (format, decipherScript, nTransformScript) => {
 export const decipherFormats = async (formats, html5player, options) => {
     try {
         const decipheredFormats = {};
-        const [decipherScript, nTransformScript] = await getFunctions(html5player, options);
+        const functionsKey = `functions-${html5player}`;
+
+        let body
+
+        if (!cache.has(functionsKey)) {
+            body = await request(html5player, options);
+        }
+        
+        const [decipherScript, nTransformScript] = await getFunctions(functionsKey, body);
 
         formats.forEach(format => {
             setDownloadURL(format, decipherScript, nTransformScript);

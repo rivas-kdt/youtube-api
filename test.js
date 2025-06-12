@@ -18,9 +18,10 @@ const server = http.createServer(async (req, res) => {
     }
     
     console.log(`Processing request for video ID: ${videoId}`);
-    
+    let date = Date.now();
     // Get video data
     const videoInfo = await getData(videoId);
+    console.log(Date.now() - date, 'time took', videoId)
     const filtered = filter(videoInfo.formats, 'bestaudio');
     // Set headers and return the response
     res.writeHead(200, { 'Content-Type': 'application/json' });
