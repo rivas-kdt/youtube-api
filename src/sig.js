@@ -1,5 +1,5 @@
 import Cache from './cache.js';
-import vm from 'vm';
+import { vm } from './native-vm.js';
 const cache = new Cache(1);
 import querystring from 'querystring';
 
