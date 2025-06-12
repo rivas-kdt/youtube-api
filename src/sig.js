@@ -2,6 +2,7 @@ import Cache from './cache.js';
 import { vm } from './native-vm.js';
 const cache = new Cache(1);
 import querystring from 'querystring';
+import { request } from './requrest.js';
 
 // Cache for storing functions by HTML5player URL
 let cachedFunctions = {};
@@ -14,8 +15,7 @@ export const getFunctions = (html5playerfile, options) => {
 
     // Cache check and fetch using the existing cache mechanism
     return cache.getOrSet(html5playerfile, async () => {
-        const response = await fetch(html5playerfile, options.requestOptions);
-        const body = await response.text();
+        const body = await request(html5playerfile, options.requestOptions);
         const functions = extractFunctions(body);
         // Store in memory cache for faster access
         cachedFunctions[html5playerfile] = functions;

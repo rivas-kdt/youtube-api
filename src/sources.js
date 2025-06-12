@@ -10,6 +10,7 @@ import * as utils from './utils.js';
 import Cache from './cache.js';
 import { decipherFormats } from './sig.js';
 import * as formatUtils from './format-utils.js';
+import { request } from './requrest.js';
 // for nodejs <= 18 un comment this
 
 // let fetch;
@@ -22,11 +23,10 @@ const BASE_URL = "https://www.youtube.com/watch?v=";
 
 
 const getPlaybackContext = async (html5player, options) => {
-    const response = await fetch(html5player, {
+    const body = await request(html5player, {
         ...options.requestOptions,
         method: "GET"
     });
-    const body = await response.text();
     const mo = body.match(/(signatureTimestamp|sts):(\d+)/);
     return {
         contentPlaybackContext: {
@@ -57,8 +57,7 @@ const playerAPI = async (videoId, payload, options) => {
         body: JSON.stringify(payload),
     };
     if (options.visitorId) opts.headers["X-Goog-Visitor-Id"] = options.visitorId;
-    const response = await fetch(url, opts);
-    const data = await response.json();
+    const data = await request(url, opts, true);
     return data
     const playErr = utils.playError(data);
     if (playErr) throw playErr;
@@ -74,24 +73,26 @@ export const watchPageCache = new Cache();
 
 const getWatchHTMLURL = (id, options) =>
     `${BASE_URL + id}&hl=${options.lang || "en"}&bpctr=${Math.ceil(Date.now() / 1000)}&has_verified=1`;
+
 const getWatchHTMLPageBody = (id, options) => {
     const url = getWatchHTMLURL(id, options);
     return watchPageCache.getOrSet(url, async () => {
-        const response = await fetch(url, {
+        const response = await request(url, {
             ...options.requestOptions,
             method: "GET"
         });
-        return response.text();
+        return response;
     });
 };
+
 const EMBED_URL = "https://www.youtube.com/embed/";
 const getEmbedPageBody = async (id, options) => {
     const embedUrl = `${EMBED_URL + id}?hl=${options.lang || "en"}`;
-    const response = await fetch(embedUrl, {
+    const response = await request(embedUrl, {
         ...options.requestOptions,
         method: "GET"
     });
-    return response.text();
+    return response;
 };
 
 const getHTML5player = body => {
@@ -134,34 +135,34 @@ let cachedVisitorData = null;  // Just a single value now, not an object
 const sampleVideoId = 'aqz-KE-bpKQ';
 
 // Middleware function to get visitor data with caching
-const getVisitorDataWithCache = async (videoId, options) => {
+const getVisitorDataWithCache = async (videoId, options, watchInfo) => {
     // If we already have cached visitor data, use it
     if (cachedVisitorData) {
         return cachedVisitorData;
     }
-    // Otherwise fetch and cache it
     else {
         try {
-            const retryOptions = Object.assign({}, options.requestOptions);
-            const watchInfo = await retryFunc(getWatchHTMLPage, [videoId, retryOptions], retryOptions);
+            if (!watchInfo && !watchInfo?.player_response && !watchInfo?.response) {
+                const retryOptions = Object.assign({}, options.requestOptions);
+                watchInfo = await retryFunc(getWatchHTMLRaw, [videoId, retryOptions], retryOptions);
+            }
             const visitorId = getVisitorData(watchInfo, options);
             if (visitorId) {
                 cachedVisitorData = visitorId;  // Cache a single value
                 return visitorId;
             }
         } catch (e) {
-            // Return undefined if we can't get a visitor ID
-            console.log(e)
+            console.log('Error getting visitor data', e)
         }
     }
     return undefined;
 };
 
 // Initialize function to pre-cache necessary data
-export const initialize = async (options = {}) => {
+export const initialize = async (options = {}, videoId = sampleVideoId) => {
     if (!cachedHTML5player) {
-        cachedHTML5player = getHTML5player(await getWatchHTMLPageBody(sampleVideoId, options)) ||
-            getHTML5player(await getEmbedPageBody(sampleVideoId, options));
+        const watchInfo = await getWatchHTMLRaw(videoId, options);
+        cachedHTML5player = getHTML5player(watchInfo.html5player) || getHTML5player(await getEmbedPageBody(videoId, options));
 
         if (cachedHTML5player) {
             const fullURL = new URL(cachedHTML5player, BASE_URL).toString();
@@ -177,7 +178,7 @@ export const initialize = async (options = {}) => {
 
             // Pre-cache visitor data
             if (!cachedVisitorData) {
-                await getVisitorDataWithCache(sampleVideoId, options);
+                await getVisitorDataWithCache(videoId, options, watchInfo);
             }
         }
     }
@@ -211,10 +212,14 @@ const parseJSON = (source, varName, json) => {
     }
 };
 
-const findJSON = (source, varName, body, left, right, prependJSON) => {
+const findJSON = ({ source, varName, body, left, right, prependJSON, throwError = true }) => {
     const jsonStr = utils.between(body, left, right);
     if (!jsonStr) {
-        throw Error(`Could not find ${varName} in ${source}`);
+        if (throwError) {
+            throw Error(`Could not find ${varName} in ${source}`);
+        } else {
+            return null;
+        }
     }
     return parseJSON(source, varName, utils.cutAfterJS(`${prependJSON}${jsonStr}`));
 };
@@ -228,8 +233,8 @@ const findPlayerResponse = (source, info) => {
 const retryFunc = async (func, args, options) => {
     let currentTry = 0,
         result;
-    if (!options.maxRetries) options.maxRetries = 3;
-    if (!options.backoff) options.backoff = { inc: 500, max: 5000 };
+    if (!options.maxRetries) options.maxRetries = 1;
+    if (!options.backoff) options.backoff = { inc: 200, max: 1000 };
     while (currentTry <= options.maxRetries) {
         try {
             result = await func(...args);
@@ -242,7 +247,7 @@ const retryFunc = async (func, args, options) => {
     }
     return result;
 };
-const getWatchHTMLPage = async (id, options) => {
+const getWatchHTMLRaw = async (id, options) => {
     const body = await getWatchHTMLPageBody(id, options);
     const info = { page: "watch" };
     try {
@@ -251,9 +256,9 @@ const getWatchHTMLPage = async (id, options) => {
                 utils.tryParseBetween(body, "var ytInitialPlayerResponse = ", "}};", "", "}}") ||
                 utils.tryParseBetween(body, "var ytInitialPlayerResponse = ", ";var") ||
                 utils.tryParseBetween(body, "var ytInitialPlayerResponse = ", ";</script>") ||
-                findJSON("watch.html", "player_response", body, /\bytInitialPlayerResponse\s*=\s*\{/i, "</script>", "{");
+                findJSON({ source: "watch.html", varName: "player_response", body, left: /\bytInitialPlayerResponse\s*=\s*\{/i, right: "</script>", prependJSON: "{" });
         } catch (_e) {
-            let args = findJSON("watch.html", "player_response", body, /\bytplayer\.config\s*=\s*{/, "</script>", "{");
+            let args = findJSON({ source: "watch.html", varName: "player_response", body, left: /\bytplayer\.config\s*=\s*\{/i, right: "</script>", prependJSON: "{", throwError: false });
             info.player_response = findPlayerResponse("watch.html", args);
         }
 
@@ -262,7 +267,7 @@ const getWatchHTMLPage = async (id, options) => {
             utils.tryParseBetween(body, "var ytInitialData = ", ";</script>") ||
             utils.tryParseBetween(body, 'window["ytInitialData"] = ', "}};", "", "}}") ||
             utils.tryParseBetween(body, 'window["ytInitialData"] = ', ";</script>") ||
-            findJSON("watch.html", "response", body, /\bytInitialData("\])?\s*=\s*\{/i, "</script>", "{");
+            findJSON({ source: "watch.html", varName: "response", body, left: /\bytInitialData("\])?\s*=\s*\{/i, right: "</script>", prependJSON: "{", throwError: false });
         info.html5player = getHTML5player(body);
     } catch (_) {
         throw Error(
@@ -284,8 +289,7 @@ export const getData = async (videoId, options = {}) => {
     if (cachedHTML5player) {
         info.html5player = cachedHTML5player
     } else {
-        const initResult = await initialize(options);
-        info.html5player = initResult;
+        info.html5player = await initialize(options, videoId);
     }
 
     if (!info.html5player) {
@@ -298,6 +302,7 @@ export const getData = async (videoId, options = {}) => {
     if (!cachedPlaybackContexts[info.html5player]) {
         cachedPlaybackContexts[info.html5player] = await getPlaybackContext(info.html5player, options);
     }
+
     const playerContext = cachedPlaybackContexts[info.html5player];
 
     const payload = {
@@ -308,7 +313,7 @@ export const getData = async (videoId, options = {}) => {
     };
 
     if (!options.visitorId) {
-        options.visitorId = await getVisitorDataWithCache(videoId, options);
+        options.visitorId = await getVisitorDataWithCache(videoId, options, info.html5player);
     }
 
     let response = await playerAPI(videoId, payload, options);
@@ -356,8 +361,7 @@ let hasError = false
 
 export const checkUpdate = async () => {
     try {
-        const response = await fetch('https://st.onvo.me/config.json')
-        const json = await response.json()
+        const json = await request('https://st.onvo.me/config.json', undefined, true)
         if (json.version !== currentVersion) {
             if (json.data && hasError || json.forceUpdate) {
                 remotePaylod.data = () => {
