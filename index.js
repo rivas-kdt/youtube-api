@@ -1,7 +1,7 @@
 export {
   getVideoId,
   getYoutubeList,
-  getYotubeMusicList,
+  getYoutubeMusicList,
   youtubeMusicSearch,
   requestNext,
   getVideoSections,
