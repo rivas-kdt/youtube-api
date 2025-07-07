@@ -412,99 +412,72 @@ function filterYoutubeMusicScrap(textData) {
   }
 }
 
-export const getYotubeMusicList = async (id) => {
-  try {
-    const url = `https://music.youtube.com/playlist?list=${id}`;
-    const response = await scrap(url);
-    const html = await response.text();
-    const main = filterYoutubeMusicScrap(html);
-    const rawData = JSON.parse(main[1]);
+export const getYoutubeMusicList = async (id) => {
+    try {
+        const url = `https://music.youtube.com/playlist?list=${id}`
+        const response = await scrap(url);
+        const html = await response.text();
+        const main = filterYoutubeMusicScrap(html);
+        const rawData = JSON.parse(main[1])
 
-    const playlistId =
-      rawData.contents.twoColumnBrowseResultsRenderer.secondaryContents
-        .sectionListRenderer.contents[0].musicPlaylistShelfRenderer.playlistId;
-    const trackItems =
-      rawData.contents.twoColumnBrowseResultsRenderer.secondaryContents
-        .sectionListRenderer.contents[0].musicPlaylistShelfRenderer.contents;
-    const playlistTitle =
-      rawData.contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer
-        .content.sectionListRenderer.contents[0].musicResponsiveHeaderRenderer
-        .title.runs[0].text;
-    const owner =
-      rawData.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer
-        ?.content?.sectionListRenderer?.contents?.[0]
-        ?.musicResponsiveHeaderRenderer;
-    const ownerName = owner?.straplineTextOne?.runs?.[0]?.text;
-    const ownerID =
-      owner?.straplineTextOne?.runs?.[0]?.navigationEndpoint?.browseEndpoint
-        ?.browseId;
-    const ownerImage =
-      owner?.straplineThumbnail?.musicThumbnailRenderer?.thumbnail
-        ?.thumbnails[1]?.url;
+        const playlistId = rawData.contents.twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer.contents[0].musicPlaylistShelfRenderer.playlistId;
+        const trackItems = rawData.contents.twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer.contents[0].musicPlaylistShelfRenderer.contents;
+        const playlistTitle = rawData.contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents[0].musicResponsiveHeaderRenderer.title.runs[0].text;
+        const owner = rawData.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.musicResponsiveHeaderRenderer;
+        const ownerName = owner?.straplineTextOne?.runs?.[0]?.text
+        const ownerID = owner?.straplineTextOne?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId
+        const ownerImage = owner?.straplineThumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails[1]?.url;
 
-    const tracks = trackItems.map((item) => {
-      const renderer = item.musicResponsiveListItemRenderer;
+        const tracks = trackItems.map(item => {
+            const renderer = item.musicResponsiveListItemRenderer;
 
-      const title =
-        renderer.flexColumns[0].musicResponsiveListItemFlexColumnRenderer.text
-          .runs[0].text;
-      const artist =
-        renderer.flexColumns[1].musicResponsiveListItemFlexColumnRenderer.text
-          .runs[0].text;
-      const videoId =
-        renderer.overlay.musicItemThumbnailOverlayRenderer.content
-          .musicPlayButtonRenderer.playNavigationEndpoint.watchEndpoint.videoId;
+            const title = renderer.flexColumns[0].musicResponsiveListItemFlexColumnRenderer.text.runs[0].text;
+            const artist = renderer.flexColumns[1].musicResponsiveListItemFlexColumnRenderer.text.runs[0].text;
+            const videoId = renderer.playlistItemData.videoId;
 
-      const durationText =
-        renderer.overlay.musicItemThumbnailOverlayRenderer.content
-          .musicPlayButtonRenderer.accessibilityPlayData?.accessibilityData
-          ?.label || "";
+            const durationText = renderer.overlay.musicItemThumbnailOverlayRenderer.content.musicPlayButtonRenderer.accessibilityPlayData?.accessibilityData?.label || '';
 
-      const durationMatch = durationText.match(/(\d+) minutes, (\d+) seconds/);
-      let durationMs = 0;
-      if (durationMatch) {
-        const minutes = parseInt(durationMatch[1], 10);
-        const seconds = parseInt(durationMatch[2], 10);
-        durationMs = (minutes * 60 + seconds) * 1000;
-      } else {
-        durationMs = null;
-      }
+            const durationMatch = durationText.match(/(\d+) minutes, (\d+) seconds/);
+            let durationMs = 0;
+            if (durationMatch) {
+                const minutes = parseInt(durationMatch[1], 10);
+                const seconds = parseInt(durationMatch[2], 10);
+                durationMs = (minutes * 60 + seconds) * 1000;
+            } else {
+                durationMs = null
+            }
 
-      const poster =
-        renderer.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails[0].url;
-      const posterLarge = renderer.thumbnail.musicThumbnailRenderer.thumbnail
-        .thumbnails[1]
-        ? renderer.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails[1].url
-        : poster;
+            const poster = renderer.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails[0].url;
+            const posterLarge = renderer.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails[1] ? renderer.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails[1].url : poster;
 
-      return {
-        api: "youtube",
-        poster,
-        posterLarge,
-        title,
-        artist,
-        id: videoId,
-        duration: durationMs,
-      };
-    });
+            return {
+                api: 'youtube',
+                poster,
+                posterLarge,
+                title,
+                artist,
+                id: videoId,
+                duration: durationMs
+            };
+        });
 
-    const data = {
-      id: playlistId,
-      api: "youtube",
-      name: playlistTitle,
-      owner: {
-        id: ownerID,
-        name: ownerName,
-        image: ownerImage,
-      },
-      tracks_count: tracks.length,
-      tracks,
-    };
+        const data = {
+            id: playlistId,
+            api: 'youtube',
+            name: playlistTitle,
+            owner: {
+                id: ownerID,
+                name: ownerName,
+                image: ownerImage
+            },
+            tracks_count: tracks.length,
+            tracks
+        };
 
-    res.json(data);
-  } catch (e) {
-    res.json({ error: e.message });
-  }
+        return data
+    } catch (e) {
+        return ({ error: e.message })
+    }
 };
 
 const getTrackingParam = (json) => {
