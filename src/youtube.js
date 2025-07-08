@@ -414,21 +414,21 @@ function filterYoutubeMusicScrap(textData) {
 
 export const getYoutubeMusicList = async (id) => {
     try {
-        const url = `https://music.youtube.com/playlist?list=${id}`
+        const url = `https://music.youtube.com/playlist?list=${id}`;
         const response = await scrap(url);
         const html = await response.text();
         const main = filterYoutubeMusicScrap(html);
-        const rawData = JSON.parse(main[1])
+        const rawData = JSON.parse(main[1]);
 
         const playlistId = rawData.contents.twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer.contents[0].musicPlaylistShelfRenderer.playlistId;
         const trackItems = rawData.contents.twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer.contents[0].musicPlaylistShelfRenderer.contents;
         const playlistTitle = rawData.contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.sectionListRenderer.contents[0].musicResponsiveHeaderRenderer.title.runs[0].text;
         const owner = rawData.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.musicResponsiveHeaderRenderer;
-        const ownerName = owner?.straplineTextOne?.runs?.[0]?.text
-        const ownerID = owner?.straplineTextOne?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId
+        const ownerName = owner?.straplineTextOne?.runs?.[0]?.text;
+        const ownerID = owner?.straplineTextOne?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId;
         const ownerImage = owner?.straplineThumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails[1]?.url;
 
-        const tracks = trackItems.map(item => {
+        let tracks = trackItems.map(item => {
             const renderer = item.musicResponsiveListItemRenderer;
 
             const title = renderer.flexColumns[0].musicResponsiveListItemFlexColumnRenderer.text.runs[0].text;
@@ -444,7 +444,7 @@ export const getYoutubeMusicList = async (id) => {
                 const seconds = parseInt(durationMatch[2], 10);
                 durationMs = (minutes * 60 + seconds) * 1000;
             } else {
-                durationMs = null
+                durationMs = null;
             }
 
             const poster = renderer.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails[0].url;
@@ -461,6 +461,15 @@ export const getYoutubeMusicList = async (id) => {
             };
         });
 
+        const validatedTracks = [];
+        for (const track of tracks) {
+            const searchResults = await youtubeMusicSearch(`${track.title} ${track.artist}`, "songs");
+            const found = searchResults.find(item => item.id === track.id || item.title.toLowerCase() === track.title.toLowerCase());
+            if (found) {
+                validatedTracks.push(track);
+            }
+        }
+      
         const data = {
             id: playlistId,
             api: 'youtube',
@@ -470,13 +479,13 @@ export const getYoutubeMusicList = async (id) => {
                 name: ownerName,
                 image: ownerImage
             },
-            tracks_count: tracks.length,
-            tracks
+            tracks_count: validatedTracks.length,
+            tracks: validatedTracks
         };
 
-        return data
+        return data;
     } catch (e) {
-        return ({ error: e.message })
+        return { error: e.message };
     }
 };
 
