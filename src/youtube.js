@@ -799,15 +799,38 @@ export const requestNext = async (id) => {
   return data;
 };
 
+/** YouTube inserted a Comments tab; Related is no longer always tabs[2]. */
+const resolveWatchNextTabBrowseId = (tabs = [], { titlePattern, browsePrefix } = {}) => {
+  const mapped = tabs.map((tab, index) => {
+    const tr = tab?.tabRenderer || {};
+    return {
+      index,
+      title: tr.title,
+      browseId: tr.endpoint?.browseEndpoint?.browseId,
+    };
+  });
+
+  const byTitle = titlePattern
+    ? mapped.find((tab) => titlePattern.test(tab.title || ""))
+    : null;
+  const byPrefix = browsePrefix
+    ? mapped.find((tab) => tab.browseId?.startsWith(browsePrefix))
+    : null;
+
+  return (byTitle || byPrefix)?.browseId;
+};
+
 export const getVideoSections = async (id) => {
   const data = await requestNext(id);
-  const sections =
+  const tabs =
     data?.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer
-      ?.watchNextTabbedResultsRenderer?.tabs?.[0]?.tabRenderer?.content
-      ?.musicQueueRenderer?.content?.playlistPanelRenderer?.contents;
+      ?.watchNextTabbedResultsRenderer?.tabs || [];
+  const sections =
+    tabs?.[0]?.tabRenderer?.content?.musicQueueRenderer?.content
+      ?.playlistPanelRenderer?.contents;
   let mixID;
   let mixParam;
-  sections.forEach((section) => {
+  sections?.forEach((section) => {
     try {
       if (section.automixPreviewVideoRenderer) {
         const mix =
@@ -825,14 +848,17 @@ export const getVideoSections = async (id) => {
       console.error(e);
     }
   });
-  const related =
-    data?.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer
-      ?.watchNextTabbedResultsRenderer?.tabs?.[2]?.tabRenderer?.endpoint
-      ?.browseEndpoint?.browseId;
-  const lyrics =
-    data?.contents?.singleColumnMusicWatchNextResultsRenderer?.tabbedRenderer
-      ?.watchNextTabbedResultsRenderer?.tabs?.[1]?.tabRenderer?.endpoint
-      ?.browseEndpoint?.browseId;
+
+  // Prefer title match — Related moved from index 2 → 3 after Comments was added.
+  const related = resolveWatchNextTabBrowseId(tabs, {
+    titlePattern: /related/i,
+    browsePrefix: "MPTR",
+  });
+  const lyrics = resolveWatchNextTabBrowseId(tabs, {
+    titlePattern: /lyrics/i,
+    browsePrefix: "MPLY",
+  });
+
   return { mix: mixID, mixParam, related, lyrics };
 };
 
@@ -906,34 +932,34 @@ export const getPlaylistQueue = async (id, params) => {
 };
 
 const filterTrackRelated = (track) => {
+  const renderer = track.musicResponsiveListItemRenderer;
+  if (!renderer?.playlistItemData?.videoId) return null;
+
+  const title =
+    renderer.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text
+      ?.runs?.[0]?.text;
+  const artistRun =
+    renderer.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text
+      ?.runs?.[0];
+  const albumRun =
+    renderer.flexColumns?.[2]?.musicResponsiveListItemFlexColumnRenderer?.text
+      ?.runs?.[0];
+  const thumbs =
+    renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
+  const poster = thumbs[1]?.url || thumbs[0]?.url;
+
   return {
     api: "youtube",
-    id: track.musicResponsiveListItemRenderer.playlistItemData.videoId,
-    title:
-      track.musicResponsiveListItemRenderer.flexColumns[0]
-        .musicResponsiveListItemFlexColumnRenderer.text.runs[0].text,
-    artist:
-      track.musicResponsiveListItemRenderer.flexColumns[1]
-        .musicResponsiveListItemFlexColumnRenderer.text.runs[0].text,
-    artistID:
-      track.musicResponsiveListItemRenderer.flexColumns[1]
-        .musicResponsiveListItemFlexColumnRenderer.text.runs[0]
-        .navigationEndpoint?.browseEndpoint?.browseId,
-    poster:
-      track.musicResponsiveListItemRenderer.thumbnail.musicThumbnailRenderer
-        .thumbnail.thumbnails[1]?.url,
-    posterLarge:
-      track.musicResponsiveListItemRenderer.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails[1].url?.split(
-        "="
-      )[0] + "=w600-h600-l100-rj",
-    album:
-      track.musicResponsiveListItemRenderer.flexColumns[2].musicResponsiveListItemFlexColumnRenderer.text.runs[0]?.text
-        ?.split("(")[0]
-        .trim(),
-    albumID:
-      track.musicResponsiveListItemRenderer.flexColumns[2]
-        .musicResponsiveListItemFlexColumnRenderer.text.runs[0]
-        ?.navigationEndpoint.browseEndpoint.browseId,
+    id: renderer.playlistItemData.videoId,
+    title: title || "Unknown Title",
+    artist: artistRun?.text || "Unknown Artist",
+    artistID: artistRun?.navigationEndpoint?.browseEndpoint?.browseId,
+    poster,
+    posterLarge: poster
+      ? `${String(poster).split("=")[0]}=w600-h600-l100-rj`
+      : undefined,
+    album: albumRun?.text?.split("(")[0]?.trim(),
+    albumID: albumRun?.navigationEndpoint?.browseEndpoint?.browseId,
   };
 };
 
@@ -1004,32 +1030,43 @@ export const getLyrics = async (param, id, andNative) => {
 };
 
 export const getYTMusicRelated = async (id) => {
+  if (!id) {
+    return { artists: [], tracks: [], about: undefined };
+  }
+
   const data = await requestBrowse(id);
-  const sections =
-    data.contents?.sectionListRenderer?.contents?.[0]
-      ?.musicCarouselShelfRenderer?.contents;
-  const artistsRaw =
-    data.contents?.sectionListRenderer?.contents?.[1]
-      ?.musicCarouselShelfRenderer?.contents;
-  const about =
-    data?.contents?.sectionListRenderer?.contents?.[2]
-      ?.musicDescriptionShelfRenderer?.description?.runs?.[0]?.text;
+  const shelves = data.contents?.sectionListRenderer?.contents || [];
+
   const artists = [];
-  artistsRaw?.forEach((artist) => {
-    try {
-      artists.push(filterRelatedArtists(artist));
-    } catch (e) {
-      console.error(e);
-    }
-  });
   const tracks = [];
-  sections.forEach((section) => {
-    try {
-      tracks.push(filterTrackRelated(section));
-    } catch (e) {
-      console.error(e);
+  let about;
+
+  for (const shelf of shelves) {
+    if (shelf.musicDescriptionShelfRenderer) {
+      about =
+        shelf.musicDescriptionShelfRenderer?.description?.runs?.[0]?.text;
+      continue;
     }
-  });
+
+    const contents =
+      shelf.musicCarouselShelfRenderer?.contents ||
+      shelf.musicShelfRenderer?.contents ||
+      [];
+
+    for (const item of contents) {
+      try {
+        if (item.musicResponsiveListItemRenderer) {
+          const track = filterTrackRelated(item);
+          if (track) tracks.push(track);
+        } else if (item.musicTwoRowItemRenderer) {
+          artists.push(filterRelatedArtists(item));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
   return { artists, tracks, about };
 };
 
@@ -1047,11 +1084,16 @@ export const getRelatedAndLyrics = async (id) => {
   try {
     const params = await getVideoSections(id);
     const [list, related, lyrics] = await Promise.all([
-      getPlaylistQueue(params.mix, params.mixParam),
-      getYTMusicRelated(params.related),
-      getLyrics(params.lyrics, id),
+      params.mix
+        ? getPlaylistQueue(params.mix, params.mixParam)
+        : Promise.resolve(null),
+      params.related
+        ? getYTMusicRelated(params.related)
+        : Promise.resolve({ artists: [], tracks: [], about: undefined }),
+      params.lyrics
+        ? getLyrics(params.lyrics, id)
+        : Promise.resolve(null),
     ]);
-    console.log("requesting");
     return { lyrics, list, related };
   } catch (e) {
     console.log(e);
